@@ -1,0 +1,15 @@
+pymongo==4.3.3
+fastapi==0.104.1
+motor==3.1.1
+uvicorn==0.23.2
+pydantic==2.4.2
+sqlalchemy==2.0.23
+alembic==1.12.1
+python-jose==3.3.0
+passlib==1.7.4
+python-multipart==0.0.6
+openai==1.2.4
+httpx==0.25.1
+pytest==7.4.3
+python-dotenv==1.0.0
+redis==5.0.1 
