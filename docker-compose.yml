@@ -9,9 +9,9 @@ services:
     volumes:
       - ./server:/app
     environment:
-      - ENVIRONMENT=development
-      - OPENAI_API_KEY=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
-      - MONGODB_URL=mongodb://mongodb:27017
+      - ENVIRONMENT=${ENVIRONMENT}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MONGODB_URL=${MONGODB_URL}
     depends_on:
       - mongodb
     command: >
