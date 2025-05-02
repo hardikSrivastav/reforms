@@ -3,3 +3,6 @@
 
 # Docker
 docker-compose.yml
+
+# SQLite database
+*.db

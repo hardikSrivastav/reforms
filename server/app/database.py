@@ -12,8 +12,10 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 if ENVIRONMENT == "production":
     SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 else:
-    # Use in-memory SQLite for development and testing
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./dev.db"
+    # Use a writable location for SQLite in development
+    DB_DIR = os.getenv("DB_DIR", "/data")
+    os.makedirs(DB_DIR, exist_ok=True)
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_DIR}/dev.db"
 
 # Create engine and session
 engine = create_engine(
