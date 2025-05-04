@@ -67,4 +67,27 @@ app/
 1. Create your route handlers in the appropriate file under `app/api/`
 2. If needed, add Pydantic models in `app/schemas/`
 3. Add business logic in `app/services/`
-4. Register your routes in `app/main.py` 
+4. Register your routes in `app/main.py`
+
+## Survey Insights Cache
+
+A new database table `survey_insights_cache` has been added to improve performance of AI-generated insights. The system now caches insights for each survey and only regenerates them when there is a meaningful change in the response data.
+
+To apply this change to your database:
+
+1. Stop the server if it's running
+2. Start the server with the `--create-tables` flag or manually run the following from a Python shell:
+
+```python
+from app.database import engine
+from app.models import Base
+Base.metadata.create_all(bind=engine)
+```
+
+### How it works
+
+- Survey insights are now cached in the database
+- A hash of the response data is used to detect meaningful changes
+- The UI displays a "Cached" badge when insights are loaded from cache
+- A "Regenerate Insights" button allows users to force fresh insights generation
+- This reduces unnecessary OpenAI API calls and speeds up insight generation 

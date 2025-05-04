@@ -5,7 +5,7 @@ from datetime import datetime
 from bson import ObjectId
 
 from ..database import get_db, get_mongo_db
-from ..models import Goal, Metric, SurveyIdMapping
+from ..models import Goal, Metric, SurveyIdMapping, Form
 from ..schemas import GoalCreate, Goal as GoalSchema, GoalResponse, MetricsGenerateRequest, MetricsGenerateResponse, MetricCreate
 from ..services.openai_service import openai_service
 
@@ -130,6 +130,16 @@ async def update_goal_metrics(
                 mongo_id=mongo_id
             )
             db.add(mapping)
+
+            new_form = Form(
+                title=goal.description,
+                description=goal.description,
+                survey_id=goal_id,
+                is_public=True,
+                responses_count=0
+            )
+            db.add(new_form)
+            
             db.commit()
         else:
             # Update existing MongoDB document

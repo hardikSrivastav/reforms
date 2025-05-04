@@ -6,3 +6,5 @@ docker-compose.yml
 
 # SQLite database
 *.db
+client/node_modules
+

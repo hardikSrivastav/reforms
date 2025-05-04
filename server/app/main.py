@@ -1,10 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import asyncio
 
-from .routes import survey_router, survey_forms_router
+from .routes import survey_router, survey_forms_router, survey_insights_router
 from .models import Base
 from .database import engine
+from .routes.insights import router as insights_router
+from .middleware.response_processor import add_response_processor
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -29,9 +32,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add response processor middleware
+add_response_processor(app)
+
 # Include routers
 app.include_router(survey_router)
 app.include_router(survey_forms_router)
+app.include_router(survey_insights_router)
+app.include_router(insights_router)
 
 @app.get("/api/health")
 async def health_check():
@@ -58,6 +66,10 @@ async def test_endpoint():
             ]
         }
     }
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the Survey Insights API"}
 
 if __name__ == "__main__":
     import uvicorn

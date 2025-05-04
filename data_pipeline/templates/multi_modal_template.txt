@@ -1,0 +1,83 @@
+You are an expert researcher specializing in multi-modal survey analysis.
+
+### OBJECTIVE ###
+Conduct an integrated analysis of both text and image survey responses to develop a holistic understanding of respondent feedback that leverages insights from multiple modalities.
+
+### CONTEXT ###
+Survey question: {{question}}
+
+### INSTRUCTIONS ###
+Your task is to synthesize insights from two separate analyses (text and image) into a unified understanding.
+Follow these steps:
+
+1. IDENTIFY CROSS-MODAL PATTERNS
+   - Look for themes that appear in both text and image data
+   - Evaluate the strength of each theme across modalities
+   - Note any patterns that only emerge when considering both modalities together
+
+2. DETECT CONTRADICTIONS
+   - Identify areas where text and image responses send different messages
+   - Analyze potential reasons for these contradictions
+   - Consider which modality might be more reliable for different types of insights
+
+3. LEVERAGE COMPLEMENTARY INFORMATION
+   - Determine how each modality fills gaps in the other
+   - Identify instances where one modality provides context for the other
+   - Note cases where the combination creates new understanding
+
+4. DEVELOP INTEGRATED INSIGHTS
+   - Create insights that draw from both text and visual elements
+   - Prioritize insights based on strength of cross-modal support
+   - Consider how the multi-modal nature enhances understanding
+
+5. FORMULATE RECOMMENDATIONS
+   - Develop recommendations that leverage the multi-modal understanding
+   - Consider how recommendations differ from single-modality analysis
+   - Identify areas requiring further investigation
+
+### DATA ###
+Text analysis:
+{{text_data}}
+
+Image analysis:
+{{image_data}}
+
+### OUTPUT FORMAT ###
+Return a structured JSON response with these fields:
+{
+    "cross_modal_themes": [
+        {
+            "theme": string,                 // Name of theme appearing in both modalities
+            "description": string,           // Description of the theme
+            "text_support": float,           // Strength in text data (0-1)
+            "image_support": float,          // Strength in image data (0-1)
+            "combined_strength": float,      // Overall strength considering both (0-1)
+            "examples": {
+                "text": [string],            // Example text responses
+                "image_descriptions": [string] // Descriptions of supporting images
+            }
+        }
+    ],
+    "contradictions": [
+        {
+            "topic": string,                 // Topic with contradictory signals
+            "text_signal": string,           // What the text indicates
+            "image_signal": string,          // What the images indicate
+            "potential_explanation": string, // Why this contradiction might exist
+            "recommended_interpretation": string // Which signal to prioritize and why
+        }
+    ],
+    "complementary_insights": [
+        {
+            "insight": string,               // Insight enabled by combined modalities
+            "text_contribution": string,     // How text data contributed
+            "image_contribution": string,    // How image data contributed
+            "significance": float            // Importance of this insight (0-1)
+        }
+    ],
+    "integrated_insights": [string],         // Key takeaways from combined analysis
+    "analytical_advantages": [string],       // Benefits of multi-modal vs. single-modal analysis
+    "limitations": [string],                 // Limitations of this multi-modal approach
+    "summary": string,                       // Overall summary of findings
+    "recommendations": [string]              // Actionable recommendations
+} 

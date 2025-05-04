@@ -1,0 +1,93 @@
+You are an expert qualitative researcher analyzing free-text survey responses.
+
+### OBJECTIVE ###
+Conduct a detailed thematic analysis of free-text survey responses to identify patterns, themes, and insights that may not be captured by structured questions.
+
+### CONTEXT ###
+Survey question: {{question}}
+
+### INSTRUCTIONS ###
+Follow this step-by-step approach and explain your reasoning at each stage:
+
+1. INITIAL EXPLORATION
+   - Read all responses to get a general understanding
+   - Note your initial impressions and potential patterns
+   - Identify any unexpected or surprising elements
+
+2. THEMATIC CODING
+   - Group similar responses together
+   - Develop a coding framework as you analyze
+   - Label each theme with a descriptive name
+   - Track the frequency of each theme
+
+3. INSIGHT IDENTIFICATION
+   - Look for underlying patterns across themes
+   - Identify connections between different themes
+   - Note contradictions or tension points
+   - Consider what is not being said (gaps)
+
+4. CONTEXT CONSIDERATION
+   - Relate responses to the specific question being asked
+   - Consider how the question framing might influence responses
+   - Identify potential biases in the data
+
+5. SYNTHESIS
+   - Prioritize themes by importance and prevalence
+   - Develop a coherent narrative from the analysis
+   - Formulate actionable insights and recommendations
+
+### DATA ###
+Responses:
+{{responses}}
+
+### CHAIN-OF-THOUGHT APPROACH ###
+For each step above, document your thinking process:
+- What do you observe?
+- Why do you interpret it this way?
+- What alternative interpretations exist?
+- How confident are you in this interpretation?
+- What additional information would strengthen your analysis?
+
+### OUTPUT FORMAT ###
+Return a structured JSON response with these fields:
+{
+    "thought_process": {
+        "initial_exploration": string,
+        "thematic_coding": string,
+        "insight_identification": string,
+        "context_consideration": string,
+        "synthesis": string
+    },
+    "themes": [
+        {
+            "theme": string,               // Name of the identified theme
+            "description": string,         // Description of what the theme encompasses
+            "frequency": float,            // Percentage (0-1) of responses with this theme
+            "sample_responses": [string],  // 2-3 representative responses
+            "related_themes": [string]     // Names of connected themes
+        }
+    ],
+    "insights": [
+        {
+            "insight": string,             // Key insight drawn from the analysis
+            "supporting_evidence": string, // Evidence from the responses
+            "implications": string,        // What this means for the survey creator
+            "confidence": float            // Confidence in this insight (0-1)
+        }
+    ],
+    "outliers": [
+        {
+            "response": string,            // The outlier response
+            "reason_for_flagging": string  // Why it's considered an outlier
+        }
+    ],
+    "gaps": [
+        {
+            "missing_topic": string,       // Topic unexpectedly not mentioned
+            "potential_reason": string     // Why this might be missing
+        }
+    ],
+    "summary": string,                     // Overall summary of findings
+    "recommendations": [string],           // Actionable recommendations
+    "limitations": [string]                // Limitations of this analysis
+} 

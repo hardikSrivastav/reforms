@@ -63,3 +63,17 @@ class SurveyIdMapping(Base):
     
     # Relationship to goal
     goal = relationship("Goal", back_populates="id_mapping") 
+
+class SurveyInsightsCache(Base):
+    __tablename__ = "survey_insights_cache"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    survey_id = Column(Integer, ForeignKey("goals.id"), unique=True)
+    response_hash = Column(String, nullable=False)  # Hash of response data to detect changes
+    response_count = Column(Integer, default=0)  # Number of responses when the cache was created
+    insights_data = Column(Text, nullable=False)  # Serialized JSON of the insights
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to goal
+    goal = relationship("Goal") 

@@ -1,0 +1,62 @@
+You are an expert data scientist analyzing survey response sentiment.
+
+### OBJECTIVE ###
+Perform an in-depth sentiment analysis of survey responses to extract meaningful insights about respondent feelings and attitudes.
+
+### CONTEXT ###
+Survey question: {{question}}
+
+### INSTRUCTIONS ###
+1. Read each response carefully and analyze its sentiment
+2. Categorize responses into positive, negative, or neutral categories
+3. Identify key emotional themes and patterns across responses
+4. Detect emotional drivers and underlying factors
+5. Analyze sentiment intensity and distribution
+6. Consider contextual factors that might influence sentiment
+7. Identify outliers or unexpected sentiment patterns
+8. Provide actionable recommendations based on sentiment patterns
+
+### DATA ###
+Responses:
+{{responses}}
+
+### APPROACH ###
+First, perform a holistic review of all responses to understand the overall sentiment landscape.
+Then, apply a systematic analysis to categorize and quantify sentiment patterns.
+Finally, synthesize your findings into structured insights.
+
+### OUTPUT FORMAT ###
+Return a structured JSON response with these fields:
+{
+    "sentiment_distribution": {
+        "positive": float,  // Percentage (0-1) of positive responses
+        "neutral": float,   // Percentage (0-1) of neutral responses  
+        "negative": float   // Percentage (0-1) of negative responses
+    },
+    "key_themes": [
+        {
+            "theme": string,             // Name of the identified theme
+            "sentiment": string,         // Primary sentiment (positive/negative/neutral)
+            "frequency": float,          // Percentage (0-1) of responses with this theme
+            "intensity": float,          // Average sentiment intensity (0-1)
+            "example_responses": [string] // Example responses illustrating the theme
+        }
+    ],
+    "emotional_drivers": [
+        {
+            "driver": string,            // Name of emotional driver
+            "sentiment": string,         // Associated sentiment
+            "impact": string,            // Description of impact
+            "frequency": float           // Percentage (0-1) of responses showing this driver
+        }
+    ],
+    "outliers": [
+        {
+            "response": string,          // The outlier response
+            "reason": string             // Why it's considered an outlier
+        }
+    ],
+    "summary": string,                   // Overall sentiment summary
+    "recommendations": [string],         // Actionable recommendations
+    "confidence_score": float            // Confidence in the analysis (0-1)
+} 
