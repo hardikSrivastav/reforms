@@ -8,3 +8,5 @@ docker-compose.yml
 *.db
 client/node_modules
 
+# Venv
+data_pipeline/venv/
