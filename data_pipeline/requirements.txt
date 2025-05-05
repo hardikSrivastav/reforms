@@ -39,6 +39,9 @@ wordcloud>=1.8.2
 # Background tasks
 celery>=5.2.7
 
+# API and HTTP
+aiohttp>=3.8.4
+
 # Utilities
 tqdm>=4.65.0
 python-dotenv>=1.0.0

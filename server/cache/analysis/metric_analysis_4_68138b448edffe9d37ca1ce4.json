@@ -1,0 +1,22 @@
+{
+  "survey_id": 4,
+  "metric_id": "68138b448edffe9d37ca1ce4",
+  "metric_name": "Program Benefits",
+  "metric_type": "multiple_choice",
+  "response_count": 0,
+  "timestamp": "2025-05-05T05:43:32.014353",
+  "statistical_analysis": {
+    "type": "multiple_choice",
+    "error": "Unsupported metric type"
+  },
+  "visualizations": {},
+  "ai_insights": {
+    "summary": "As there is an error message indicating that the \"multiple_choice\" metric type is unsupported, no actual data is given. Thus, it is impossible to provide a concise summary of key findings, note any patterns or trends, or offer actionable recommendations based on the data. The error in the statistical analysis tool needs to be fixed in order to process the survey data correctly. I recommend contacting the platform's support center or the tool developer to resolve this issue. After the error has been fixed, the analysis can proceed.",
+    "structured_insights": {
+      "key_findings": [],
+      "patterns": [],
+      "recommendations": []
+    },
+    "generated_at": "2025-05-05T05:43:32.014341"
+  }
+}

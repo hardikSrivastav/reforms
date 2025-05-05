@@ -1,0 +1,22 @@
+{
+  "survey_id": 4,
+  "metric_id": "68138b448edffe9d37ca1ce6",
+  "metric_name": "Engagement Level",
+  "metric_type": "likert",
+  "response_count": 0,
+  "timestamp": "2025-05-05T05:43:32.127209",
+  "statistical_analysis": {
+    "type": "likert",
+    "error": "Unsupported metric type"
+  },
+  "visualizations": {},
+  "ai_insights": {
+    "summary": "As the provided data does not include any information or values about the \"Engagement Level\" metric, it's impossible to provide a summary of key findings, notable patterns or trends, and actionable recommendations. The statistical analysis mentions an \"Unsupported metric type\" error, which seems to refer to the Likert scale metric. To fix this, we need to ensure that our statistical software or tool supports Likert scale analytics. Once we have valid analytical findings, we can identify key patterns and make evidence-based recommendations.",
+    "structured_insights": {
+      "key_findings": [],
+      "patterns": [],
+      "recommendations": []
+    },
+    "generated_at": "2025-05-05T05:43:32.127181"
+  }
+}

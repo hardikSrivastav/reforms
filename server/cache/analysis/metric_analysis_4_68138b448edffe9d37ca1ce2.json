@@ -1,0 +1,24 @@
+{
+  "survey_id": 4,
+  "metric_id": "68138b448edffe9d37ca1ce2",
+  "metric_name": "Perceived Value",
+  "metric_type": "rating",
+  "response_count": 0,
+  "timestamp": "2025-05-05T05:43:38.204324",
+  "statistical_analysis": {
+    "type": "rating",
+    "error": "Unsupported metric type"
+  },
+  "visualizations": {},
+  "ai_insights": {
+    "summary": "Without the specific data details like average rating, distribution of ratings, total responses etc., it is impossible to provide accurate insights or recommendations. The given statistical analysis reports an error, it is unable to process the 'rating' metric type. Therefore, it's crucial to analyze the raw data set for the \"Perceived Value\" survey metric. \n\nAfter analyzing the raw data, we can address:\n\n1. Key findings: Key findings will provide an overview of how the fellowship program is perceived by high schoolers. For example, if the average score is high, it could indicate that the program is viewed as highly valuable.\n\n2. Notable patterns or trends: By analyzing the data over time or in different segments (like age, gender, geographic location etc.), we may observe patterns or trends. For instance, we might find that over time the perceived value increases or decreases, or particular segments consistently rate the program higher than others.\n\n3. Actionable recommendations: These will be based on the patterns or trends observed. For example, if there is a decrease in perceived value over time, we might recommend investigating the causes for this trend and taking action to improve these areas. On the other hand, if certain segments view the program as more valuable, we might suggest focusing marketing efforts towards similar demographics.",
+    "structured_insights": {
+      "key_findings": [],
+      "patterns": [],
+      "recommendations": [
+        "After analyzing the raw data, we can address:"
+      ]
+    },
+    "generated_at": "2025-05-05T05:43:38.204314"
+  }
+}

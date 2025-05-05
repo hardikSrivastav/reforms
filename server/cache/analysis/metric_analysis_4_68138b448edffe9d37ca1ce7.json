@@ -1,0 +1,22 @@
+{
+  "survey_id": 4,
+  "metric_id": "68138b448edffe9d37ca1ce7",
+  "metric_name": "Awareness of Z Fellows",
+  "metric_type": "boolean",
+  "response_count": 0,
+  "timestamp": "2025-05-05T05:43:31.930187",
+  "statistical_analysis": {
+    "type": "boolean",
+    "error": "Unsupported metric type"
+  },
+  "visualizations": {},
+  "ai_insights": {
+    "summary": "As the provided statistical analysis shows an error \"Unsupported metric type\", there are no key findings, patterns, or trends that can be extracted from this analysis at the moment. Thus, no actionable recommendations can be made. The error indicates that boolean may not be the correct metric type for the particular data analysis software being used. A potential fix for the issue could be to convert the boolean type to a numerical form, such as 1 for True (Aware of Z Fellows program) and 0 for False (Not aware of Z Fellows program).",
+    "structured_insights": {
+      "key_findings": [],
+      "patterns": [],
+      "recommendations": []
+    },
+    "generated_at": "2025-05-05T05:43:31.930178"
+  }
+}

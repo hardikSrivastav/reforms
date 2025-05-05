@@ -53,7 +53,7 @@ class CorrelationAnalysisService:
             Dictionary with correlation analysis results
         """
         # Check cache first
-        cached_result = metadata_store.get_analysis_result("cross_metric", survey_id)
+        cached_result = await metadata_store.get_analysis_result("cross_metric", survey_id)
         if cached_result:
             return cached_result
         
@@ -88,7 +88,7 @@ class CorrelationAnalysisService:
         }
         
         # Store in cache
-        metadata_store.store_analysis_result("cross_metric", survey_id, result)
+        await metadata_store.store_analysis_result("cross_metric", survey_id, result)
         
         return result
     

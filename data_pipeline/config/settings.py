@@ -39,6 +39,8 @@ MIN_CLUSTER_SIZE = int(os.environ.get("MIN_CLUSTER_SIZE", 3))
 ANOMALY_THRESHOLD = float(os.environ.get("ANOMALY_THRESHOLD", 0.8))
 CORRELATION_THRESHOLD = float(os.environ.get("CORRELATION_THRESHOLD", 0.3))
 TEMPORAL_DRIFT_THRESHOLD = float(os.environ.get("TEMPORAL_DRIFT_THRESHOLD", 0.2))
+API_BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+API_KEY = os.environ.get("API_KEY", "")
 
 # Collection names for vector database
 COLLECTION_NAMES = {

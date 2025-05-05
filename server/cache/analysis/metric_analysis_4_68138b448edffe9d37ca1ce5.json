@@ -1,0 +1,22 @@
+{
+  "survey_id": 4,
+  "metric_id": "68138b448edffe9d37ca1ce5",
+  "metric_name": "Likelihood to Recommend",
+  "metric_type": "rating",
+  "response_count": 0,
+  "timestamp": "2025-05-05T05:43:30.553657",
+  "statistical_analysis": {
+    "type": "rating",
+    "error": "Unsupported metric type"
+  },
+  "visualizations": {},
+  "ai_insights": {
+    "summary": "As the statistical analysis provided indicates an error due to unsupported metric type, I am unable to provide a comprehensive summary, notable patterns or trends, or actionable recommendations. In order to proceed, we need to ensure that the system supports rating metrics. Once this issue has been resolved, we can proceed with the analysis of the \"Likelihood to Recommend\" survey results.",
+    "structured_insights": {
+      "key_findings": [],
+      "patterns": [],
+      "recommendations": []
+    },
+    "generated_at": "2025-05-05T05:43:30.553645"
+  }
+}

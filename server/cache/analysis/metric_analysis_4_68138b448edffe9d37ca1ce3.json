@@ -1,0 +1,22 @@
+{
+  "survey_id": 4,
+  "metric_id": "68138b448edffe9d37ca1ce3",
+  "metric_name": "Relevance to Goals",
+  "metric_type": "likert",
+  "response_count": 0,
+  "timestamp": "2025-05-05T05:43:30.621169",
+  "statistical_analysis": {
+    "type": "likert",
+    "error": "Unsupported metric type"
+  },
+  "visualizations": {},
+  "ai_insights": {
+    "summary": "I'm sorry, but there are no specific statistical results provided in the question prompt for me to analyze. The input given indicates an error and states that the metric type (Likert) is unsupported. This means I am unable to provide a summary of key findings, discuss notable patterns or trends, or offer any recommendations due to the lack of available data. Please provide data results for detailed analysis and interpretation.",
+    "structured_insights": {
+      "key_findings": [],
+      "patterns": [],
+      "recommendations": []
+    },
+    "generated_at": "2025-05-05T05:43:30.621140"
+  }
+}

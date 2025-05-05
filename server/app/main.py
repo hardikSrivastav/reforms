@@ -1,13 +1,28 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 import os
 import asyncio
+import logging
 
 from .routes import survey_router, survey_forms_router, survey_insights_router
 from .models import Base
 from .database import engine
 from .routes.insights import router as insights_router
 from .middleware.response_processor import add_response_processor
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+
+# Set up logger for insights module
+insights_logger = logging.getLogger("insights")
+insights_logger.setLevel(logging.DEBUG)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)

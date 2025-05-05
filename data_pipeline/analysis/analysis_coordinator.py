@@ -1,874 +1,538 @@
 """
-Analysis coordinator for orchestrating the multi-tiered analysis process.
-This module coordinates between different analysis components,
-manages the progressive loading of results, and integrates statistical 
-and AI-generated insights.
+Analysis coordination service that orchestrates the various analysis modules.
+This module manages the flow of data through different analysis services to generate comprehensive insights.
 """
 
-import logging
-import json
 import asyncio
+import json
 from typing import Dict, List, Any, Optional, Union
+import logging
 from datetime import datetime
 
+from data_pipeline.analysis.metric_analysis import metric_analysis_service
+from data_pipeline.analysis.cross_metric_analysis import cross_metric_analysis_service
 from data_pipeline.services.metadata_store import metadata_store
-from data_pipeline.analysis.trend_analysis import trend_analysis_service
-from data_pipeline.analysis.correlation_analysis import correlation_analysis_service
-from data_pipeline.services.ai_insights import ai_insights_service
-from data_pipeline.analysis.vector_trend_analysis import vector_trend_analysis_service
-from data_pipeline.embeddings.semantic_search import semantic_search_service
+from data_pipeline.utils.data_transformers import data_transformer
+from data_pipeline.config import settings
 
+# Configure logger
 logger = logging.getLogger(__name__)
 
-
 class AnalysisCoordinator:
-    """Coordinates the multi-tiered analysis process."""
+    """Coordinates the analysis of survey data across different analysis services."""
     
     def __init__(self):
         """Initialize the analysis coordinator."""
-        logger.info("Initialized analysis coordinator")
+        self.metric_service = metric_analysis_service
+        self.cross_metric_service = cross_metric_analysis_service
+        self.data_transformer = data_transformer
     
-    async def run_analysis_pipeline(
-        self, 
-        survey_id: int, 
-        survey_data: Dict[str, Any], 
-        responses: List[Dict[str, Any]],
-        time_series_responses: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-        run_base_only: bool = False,
-        run_vector_analysis: bool = True,
-        use_celery: bool = True
-    ) -> Dict[str, Any]:
+    async def analyze_survey(self, survey_id: int, survey_data: Dict[str, Any], responses: List[Dict[str, Any]], force_refresh: bool = False) -> Dict[str, Any]:
         """
-        Run the complete analysis pipeline for a survey.
+        Analyze survey data using all available analysis services.
         
         Args:
             survey_id: The survey ID
-            survey_data: Survey metadata and configuration
-            responses: List of survey responses
-            time_series_responses: Optional dictionary mapping time periods to response lists
-            run_base_only: Whether to run only base analysis
-            run_vector_analysis: Whether to run vector-enhanced analysis
-            use_celery: Whether to use Celery for distributed task processing
+            survey_data: The survey definition containing metrics
+            responses: The survey responses
+            force_refresh: Whether to skip the cache and force a fresh analysis
             
         Returns:
-            Dictionary with all analysis results or task IDs if using Celery
+            Dictionary with comprehensive analysis results
         """
-        logger.info(f"Running analysis pipeline for survey {survey_id}")
+        logger.info(f"Starting comprehensive analysis for survey {survey_id}")
+        logger.info(f"Survey has {len(responses)} responses")
         
-        # If using Celery, delegate to task queue
-        if use_celery:
-            from data_pipeline.tasks.analysis_tasks import run_analysis_pipeline as celery_run_pipeline
-            
-            # Submit task to Celery
-            task_result = celery_run_pipeline.delay(
-                survey_id, 
-                survey_data, 
-                responses, 
-                time_series_responses, 
-                run_base_only, 
-                run_vector_analysis
-            )
-            
-            # Return task information
-            return {
-                "survey_id": survey_id,
-                "timestamp": datetime.now().isoformat(),
-                "status": "queued",
-                "task_id": task_result.id,
-                "use_celery": True
-            }
+        # Log input data structure and sizes
+        logger.info(f"Analysis input - survey_data keys: {list(survey_data.keys())}")
+        metrics_count = len(survey_data.get("metrics", [])) if isinstance(survey_data.get("metrics"), list) else len(survey_data.get("metrics", {}))
+        logger.info(f"Analysis input - metrics count: {metrics_count}")
         
-        # If not using Celery, run the original implementation
-        # Initialize result structure
-        result = {
-            "survey_id": survey_id,
-            "timestamp": datetime.now().isoformat(),
-            "status": "in_progress",
-            "base_analysis": {},
-            "metric_analysis": {},
-            "vector_analysis": {},
-            "cross_metric_analysis": None,
-            "survey_summary": None
-        }
+        # Log sample of first response (without PII)
+        if responses and len(responses) > 0:
+            sample_response = responses[0].copy() if isinstance(responses[0], dict) else {"data": str(responses[0])}
+            # Redact actual response values for privacy
+            if "responses" in sample_response:
+                sample_response["responses"] = {k: "..." for k in sample_response["responses"].keys()}
+            logger.info(f"Analysis input - sample response structure: {sample_response}")
         
-        try:
-            # First tier: Base analysis (always run)
-            base_analysis = await self._run_base_analysis(survey_id, survey_data, responses)
-            result["base_analysis"] = base_analysis
-            
-            # Save intermediate results
-            self._save_progress(result)
-            
-            # Exit early if only base analysis is requested
-            if run_base_only:
-                result["status"] = "completed_base_only"
-                self._save_progress(result)
-                return result
-            
-            # Second tier: Per-metric analysis
-            metric_analysis_tasks = []
-            for metric_id, metric_data in survey_data.get("metrics", {}).items():
-                task = self._run_metric_analysis(
-                    survey_id, 
-                    metric_id, 
-                    metric_data, 
-                    responses, 
-                    time_series_responses
-                )
-                metric_analysis_tasks.append(task)
-            
-            # Run metric analysis tasks concurrently
-            metric_results = await asyncio.gather(*metric_analysis_tasks, return_exceptions=True)
-            
-            # Process results, handling any exceptions
-            for i, (metric_id, _) in enumerate(survey_data.get("metrics", {}).items()):
-                if isinstance(metric_results[i], Exception):
-                    logger.error(f"Error in metric analysis for {metric_id}: {str(metric_results[i])}")
-                    result["metric_analysis"][metric_id] = {"error": str(metric_results[i])}
-                else:
-                    result["metric_analysis"][metric_id] = metric_results[i]
-            
-            # Save intermediate results
-            self._save_progress(result)
-            
-            # Vector-enhanced analysis (optional)
-            if run_vector_analysis:
-                vector_analysis_tasks = []
-                for metric_id, metric_data in survey_data.get("metrics", {}).items():
-                    # Only run vector analysis for text and categorical metrics where it makes most sense
-                    if metric_data.get("type") in ["text", "categorical", "single_choice", "multi_choice"]:
-                        task = self._run_vector_enhanced_analysis(survey_id, metric_id, responses)
-                        vector_analysis_tasks.append((metric_id, task))
-                
-                # Run vector analysis tasks concurrently
-                for metric_id, task in vector_analysis_tasks:
-                    try:
-                        vector_result = await task
-                        result["vector_analysis"][metric_id] = vector_result
-                    except Exception as e:
-                        logger.error(f"Error in vector analysis for {metric_id}: {str(e)}")
-                        result["vector_analysis"][metric_id] = {"error": str(e)}
-                
-                # Save intermediate results
-                self._save_progress(result)
-            
-            # Third tier: Cross-metric analysis
-            cross_metric_result = await self._run_cross_metric_analysis(
-                survey_id, 
-                survey_data.get("metrics", {}), 
-                responses
-            )
-            result["cross_metric_analysis"] = cross_metric_result
-            
-            # Save intermediate results
-            self._save_progress(result)
-            
-            # Final tier: Generate survey summary
-            summary_result = await self._generate_survey_summary(survey_id, survey_data, result)
-            result["survey_summary"] = summary_result
-            
-            # Mark analysis as complete
-            result["status"] = "completed"
-            self._save_progress(result)
-            
-            logger.info(f"Completed analysis pipeline for survey {survey_id}")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error in analysis pipeline for survey {survey_id}: {str(e)}")
-            result["status"] = "error"
-            result["error"] = str(e)
-            self._save_progress(result)
-            return result
-    
-    async def _run_base_analysis(
-        self, 
-        survey_id: int, 
-        survey_data: Dict[str, Any], 
-        responses: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """
-        Run base analysis for a survey.
+        # Check if we already have a recent analysis result
+        if not force_refresh:
+            cached_result = await metadata_store.get_analysis_result("comprehensive", survey_id)
+            if cached_result:
+                # Check if it's recent enough (within last day by default)
+                if cached_result.get("timestamp"):
+                    cache_time = datetime.fromisoformat(cached_result["timestamp"])
+                    cache_age = (datetime.now() - cache_time).total_seconds()
+                    if cache_age < settings.ANALYSIS_CACHE_TTL:
+                        logger.info(f"Using cached comprehensive analysis for survey {survey_id}")
+                        return cached_result
+        else:
+            logger.info(f"Force refresh requested, skipping cache for survey {survey_id}")
         
-        Args:
-            survey_id: The survey ID
-            survey_data: Survey metadata and configuration
-            responses: List of survey responses
-            
-        Returns:
-            Dictionary with base analysis results
-        """
-        logger.info(f"Running base analysis for survey {survey_id}")
+        # Transform data if needed
+        transformed_survey = self.data_transformer.transform_survey_data(survey_data) if not survey_data.get("metrics") else survey_data
+        transformed_responses = self.data_transformer.transform_responses(responses, transformed_survey) if "responses" not in responses[0] else responses
         
-        # Check cache first
-        cached_result = metadata_store.get_analysis_result("base_analysis", survey_id)
-        if cached_result:
-            return cached_result
+        # Extract metrics from survey data
+        metrics = transformed_survey.get("metrics", {})
+        if not metrics:
+            return {"error": "No metrics found in survey data"}
         
-        # Initialize result
+        # Run metric analysis for each metric
+        logger.info(f"Running individual metric analysis for {len(metrics)} metrics in survey {survey_id}")
+        metric_results = await self._analyze_individual_metrics(survey_id, metrics, transformed_responses, force_refresh)
+        logger.info(f"Individual metric analysis completed with {len(metric_results)} results")
+        
+        # Run cross-metric analysis
+        logger.info(f"Running cross-metric analysis for survey {survey_id}")
+        cross_results = await self._analyze_metric_relationships(survey_id, metrics, transformed_responses, force_refresh)
+        logger.info(f"Cross-metric analysis completed")
+        
+        # Generate executive summary
+        logger.info(f"Generating executive summary for survey {survey_id}")
+        summary = await self._generate_executive_summary(metric_results, cross_results)
+        logger.info(f"Executive summary generated with {len(summary.get('metric_insights', []))} metric insights and {len(summary.get('notable_correlations', []))} notable correlations")
+        
+        # Compile final results
         result = {
             "survey_id": survey_id,
             "timestamp": datetime.now().isoformat(),
             "response_count": len(responses),
-            "metrics": {}
+            "metrics_analyzed": len(metrics),
+            "metric_analysis": metric_results,
+            "cross_metric_analysis": cross_results,
+            "summary": summary
         }
         
-        # Basic analysis for each metric
-        for metric_id, metric_data in survey_data.get("metrics", {}).items():
-            metric_type = metric_data.get("type", "unknown")
+        # Log result details
+        logger.info(f"Comprehensive analysis completed for survey {survey_id} with {len(metric_results)} metrics analyzed")
+        logger.info(f"Storing analysis result in metadata store for survey {survey_id}")
+        
+        # Cache the result
+        await metadata_store.store_analysis_result("comprehensive", survey_id, result)
+        
+        logger.info(f"Completed comprehensive analysis for survey {survey_id}")
+        return result
+    
+    async def _run_base_analysis(self, survey_id: int, survey_data: Dict[str, Any], responses: List[Dict[str, Any]], force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Run a faster, simplified analysis for immediate insights.
+        
+        Args:
+            survey_id: The survey ID
+            survey_data: The survey definition containing metrics 
+            responses: The survey responses
+            force_refresh: Whether to skip the cache and force a fresh analysis
+            
+        Returns:
+            Dictionary with basic analysis results
+        """
+        logger.info(f"Running base analysis for survey {survey_id}")
+        
+        # Check cache first if not forcing refresh
+        if not force_refresh:
+            cached_result = await metadata_store.get_analysis_result("base_analysis", survey_id)
+        if cached_result:
+            logger.info(f"Using cached base analysis for survey {survey_id}")
+            return cached_result
+        else:
+            logger.info(f"Force refresh requested, skipping cache for base analysis of survey {survey_id}")
+        
+        # Transform data if needed
+        transformed_survey = self.data_transformer.transform_survey_data(survey_data) if not survey_data.get("metrics") else survey_data
+        transformed_responses = self.data_transformer.transform_responses(responses, transformed_survey) if isinstance(responses, dict) or (responses and "responses" not in responses[0]) else responses
+        
+        # Extract metrics from survey data
+        metrics_data = transformed_survey.get("metrics", {})
+        if not metrics_data:
+            return {"error": "No metrics found in survey data"}
+        
+        # Calculate basic statistics for each metric
+        metrics_summary = {}
+        
+        for metric_id, metric in metrics_data.items():
+            metric_type = metric.get("type", "unknown")
+            metric_name = metric.get("name", f"Metric {metric_id}")
             
             # Extract values for this metric
-            values = []
-            for response in responses:
-                response_data = response.get("responses", {})
-                value = response_data.get(metric_id)
-                if value is not None:
-                    values.append(value)
+            metric_values = []
+            for response in transformed_responses:
+                response_metrics = response.get("metrics", {})
+                if metric_id in response_metrics:
+                    metric_values.append(response_metrics[metric_id])
             
-            # Calculate basic stats based on metric type
+            # Skip if no values
+            if not metric_values:
+                continue
+            
+            # Perform basic analysis based on metric type
             if metric_type == "numeric":
-                result["metrics"][metric_id] = self._calculate_numeric_stats(values)
+                try:
+                    numeric_values = [float(val) for val in metric_values if isinstance(val, (int, float)) or (isinstance(val, str) and val.strip().replace('.', '', 1).isdigit())]
+                    if numeric_values:
+                        metrics_summary[metric_id] = {
+                            "type": "numeric",
+                            "name": metric_name,
+                            "count": len(numeric_values),
+                            "min": min(numeric_values),
+                            "max": max(numeric_values),
+                            "mean": sum(numeric_values) / len(numeric_values),
+                            "values": numeric_values[:5]  # Include sample of values
+                        }
+                except Exception as e:
+                    logger.warning(f"Error analyzing numeric metric {metric_id}: {str(e)}")
             
-            elif metric_type in ["categorical", "single_choice"]:
-                result["metrics"][metric_id] = self._calculate_categorical_stats(values)
+            elif metric_type == "categorical":
+                category_counts = {}
+                for val in metric_values:
+                    val_str = str(val)
+                    if val_str in category_counts:
+                        category_counts[val_str] += 1
+                    else:
+                        category_counts[val_str] = 1
+                
+                metrics_summary[metric_id] = {
+                    "type": "categorical",
+                    "name": metric_name,
+                    "count": len(metric_values),
+                    "categories": len(category_counts),
+                    "distribution": category_counts,
+                    "values": list(metric_values[:5])  # Include sample of values
+                }
             
             elif metric_type == "multi_choice":
-                result["metrics"][metric_id] = self._calculate_multi_choice_stats(values)
+                # For multi-choice, count occurrences of each option
+                option_counts = {}
+                
+                for val in metric_values:
+                    if isinstance(val, list):
+                        for option in val:
+                            option_str = str(option)
+                            if option_str in option_counts:
+                                option_counts[option_str] += 1
+                            else:
+                                option_counts[option_str] = 1
+                    else:
+                        # Handle case where multi-choice is stored as single value
+                        val_str = str(val)
+                        if val_str in option_counts:
+                            option_counts[val_str] += 1
+                        else:
+                            option_counts[val_str] = 1
+                
+                metrics_summary[metric_id] = {
+                    "type": "multi_choice",
+                    "name": metric_name,
+                    "count": len(metric_values),
+                    "options": len(option_counts),
+                    "distribution": option_counts,
+                    "values": list(metric_values[:5]) if all(isinstance(v, (str, int, float)) for v in metric_values[:5]) 
+                            else [str(v) for v in metric_values[:5]]
+                }
+            
+            elif metric_type == "text":
+                # For text, calculate basic text statistics
+                text_lengths = [len(str(val)) for val in metric_values if val]
+                word_counts = [len(str(val).split()) for val in metric_values if val]
+                
+                metrics_summary[metric_id] = {
+                    "type": "text",
+                    "name": metric_name,
+                    "count": len(metric_values),
+                    "avg_length": sum(text_lengths) / len(text_lengths) if text_lengths else 0,
+                    "avg_words": sum(word_counts) / len(word_counts) if word_counts else 0,
+                    "samples": [str(val) for val in metric_values[:3] if val]
+                }
             
             else:
-                # Default to treating as text
-                result["metrics"][metric_id] = {
-                    "count": len(values),
-                    "response_rate": len(values) / len(responses) if len(responses) > 0 else 0
+                # Default case
+                metrics_summary[metric_id] = {
+                    "type": "unknown",
+                    "name": metric_name,
+                    "count": len(metric_values)
                 }
         
-        # Store in cache
-        metadata_store.store_analysis_result("base_analysis", survey_id, result)
+        # Compile the result
+        result = {
+            "survey_id": survey_id,
+            "timestamp": datetime.now().isoformat(),
+            "response_count": len(transformed_responses),
+            "metrics_count": len(metrics_data),
+            "metrics": metrics_summary
+        }
+        
+        # Cache the result
+        await metadata_store.store_analysis_result("base_analysis", survey_id, result)
         
         logger.info(f"Completed base analysis for survey {survey_id}")
         return result
     
-    def _calculate_numeric_stats(self, values: List[Any]) -> Dict[str, Any]:
-        """
-        Calculate basic statistics for numeric values.
-        
-        Args:
-            values: List of values
-            
-        Returns:
-            Dictionary with statistics
-        """
-        # Convert to numeric if possible
-        numeric_values = []
-        for v in values:
-            try:
-                numeric_values.append(float(v))
-            except (ValueError, TypeError):
-                pass
-        
-        if not numeric_values:
-            return {
-                "count": 0,
-                "valid_count": 0
-            }
-        
-        # Calculate basic stats
-        stats = {
-            "count": len(values),
-            "valid_count": len(numeric_values),
-            "min": min(numeric_values),
-            "max": max(numeric_values),
-            "mean": sum(numeric_values) / len(numeric_values),
-            "median": sorted(numeric_values)[len(numeric_values) // 2]
-        }
-        
-        return stats
-    
-    def _calculate_categorical_stats(self, values: List[Any]) -> Dict[str, Any]:
-        """
-        Calculate basic statistics for categorical values.
-        
-        Args:
-            values: List of values
-            
-        Returns:
-            Dictionary with statistics
-        """
-        if not values:
-            return {
-                "count": 0,
-                "categories": {}
-            }
-        
-        # Count categories
-        category_counts = {}
-        for v in values:
-            if v is None:
-                continue
-                
-            category = str(v)
-            if category in category_counts:
-                category_counts[category] += 1
-            else:
-                category_counts[category] = 1
-        
-        # Calculate percentages
-        total = len(values)
-        category_percentages = {
-            cat: (count / total) * 100
-            for cat, count in category_counts.items()
-        }
-        
-        # Find most common categories
-        sorted_categories = sorted(
-            category_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-        
-        most_common = sorted_categories[:3] if len(sorted_categories) > 3 else sorted_categories
-        most_common = [{"category": cat, "count": count} for cat, count in most_common]
-        
-        return {
-            "count": total,
-            "unique_categories": len(category_counts),
-            "categories": category_counts,
-            "percentages": category_percentages,
-            "most_common": most_common
-        }
-    
-    def _calculate_multi_choice_stats(self, values: List[Any]) -> Dict[str, Any]:
-        """
-        Calculate basic statistics for multi-choice values.
-        
-        Args:
-            values: List of values (each value should be a list)
-            
-        Returns:
-            Dictionary with statistics
-        """
-        if not values:
-            return {
-                "count": 0,
-                "options": {}
-            }
-        
-        # Count options
-        option_counts = {}
-        valid_responses = 0
-        
-        for v in values:
-            if not isinstance(v, list):
-                continue
-                
-            valid_responses += 1
-            for option in v:
-                option_str = str(option)
-                if option_str in option_counts:
-                    option_counts[option_str] += 1
-                else:
-                    option_counts[option_str] = 1
-        
-        # Calculate percentages (of responses that chose each option)
-        option_percentages = {
-            opt: (count / valid_responses) * 100 if valid_responses > 0 else 0
-            for opt, count in option_counts.items()
-        }
-        
-        # Find most common options
-        sorted_options = sorted(
-            option_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-        
-        most_common = sorted_options[:3] if len(sorted_options) > 3 else sorted_options
-        most_common = [{"option": opt, "count": count} for opt, count in most_common]
-        
-        # Calculate average selections per response
-        total_selections = sum(option_counts.values())
-        avg_selections = total_selections / valid_responses if valid_responses > 0 else 0
-        
-        return {
-            "count": len(values),
-            "valid_responses": valid_responses,
-            "unique_options": len(option_counts),
-            "options": option_counts,
-            "percentages": option_percentages,
-            "most_common": most_common,
-            "average_selections": avg_selections
-        }
-    
-    async def _run_metric_analysis(
+    async def _analyze_individual_metrics(
         self, 
         survey_id: int, 
-        metric_id: str, 
-        metric_data: Dict[str, Any], 
+        metrics: Union[List[Dict[str, Any]], Dict[str, Any]], 
         responses: List[Dict[str, Any]],
-        time_series_responses: Optional[Dict[str, List[Dict[str, Any]]]] = None
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         """
-        Run detailed analysis for a specific metric.
+        Analyze each individual metric.
         
         Args:
             survey_id: The survey ID
-            metric_id: The metric ID
-            metric_data: The metric definition data
+            metrics: Dictionary of metric definitions or list of metric definitions
             responses: List of survey responses
-            time_series_responses: Optional dictionary mapping time periods to response lists
+            force_refresh: Whether to skip the cache and force a fresh analysis
             
         Returns:
-            Dictionary with metric analysis results
+            Dictionary mapping metric IDs to their analysis results
         """
-        logger.info(f"Running metric analysis for survey {survey_id}, metric {metric_id}")
-        
-        # Check cache first
-        cached_result = metadata_store.get_analysis_result("metric_analysis", survey_id, metric_id)
-        if cached_result:
-            return cached_result
-        
-        # Initialize result
-        result = {
-            "survey_id": survey_id,
-            "metric_id": metric_id,
-            "timestamp": datetime.now().isoformat(),
-            "statistical_analysis": {},
-            "trend_analysis": None,
-            "ai_insights": None
-        }
-        
-        # Extract values for this metric
-        values = []
-        for response in responses:
-            response_data = response.get("responses", {})
-            value = response_data.get(metric_id)
-            if value is not None:
-                values.append(value)
-        
-        # Response stats
-        response_stats = {
-            "total_responses": len(responses),
-            "valid_responses": len(values),
-            "response_rate": len(values) / len(responses) if len(responses) > 0 else 0
-        }
-        
-        # Get metric type
-        metric_type = metric_data.get("type", "unknown")
-        
-        # Perform appropriate statistical analysis based on metric type
-        if metric_type == "numeric":
-            stats = self._run_numeric_analysis(values)
-        elif metric_type in ["categorical", "single_choice"]:
-            stats = self._run_categorical_analysis(values)
-        elif metric_type == "multi_choice":
-            stats = self._run_multi_choice_analysis(values)
+        # Handle different formats of metrics data
+        if isinstance(metrics, dict):
+            logger.info(f"Analyzing {len(metrics)} individual metrics for survey {survey_id}")
+            metrics_dict = metrics
         else:
-            stats = {"count": len(values)}
+            logger.info(f"Analyzing {len(metrics)} individual metrics (list format) for survey {survey_id}")
+            # Convert list to dictionary if needed
+            metrics_dict = {}
+            for m in metrics:
+                if isinstance(m, dict) and "id" in m:
+                    metrics_dict[m["id"]] = m
+                elif isinstance(m, str):
+                    # If metrics is a list of strings (metric IDs), create dummy entries
+                    metrics_dict[m] = {"id": m, "name": m}
         
-        result["statistical_analysis"] = stats
+        results = {}
+        tasks = []
         
-        # Run trend analysis if time series data is available
-        if time_series_responses:
-            trend_result = await trend_analysis_service.analyze_metric_trends(
-                survey_id, 
-                metric_id, 
-                metric_data, 
-                time_series_responses
-            )
-            result["trend_analysis"] = trend_result
-        
-        # Generate AI insights for the metric
-        ai_result = await ai_insights_service.generate_metric_insights(
-            survey_id,
-            metric_id,
-            metric_data,
-            stats,
-            response_stats
-        )
-        result["ai_insights"] = ai_result
-        
-        # Store in cache
-        metadata_store.store_analysis_result("metric_analysis", survey_id, result, metric_id)
-        
-        logger.info(f"Completed metric analysis for survey {survey_id}, metric {metric_id}")
-        return result
-    
-    def _run_numeric_analysis(self, values: List[Any]) -> Dict[str, Any]:
-        """
-        Run detailed analysis for numeric data.
-        
-        Args:
-            values: List of values
+        for metric_id, metric in metrics_dict.items():
+            metric_name = metric.get("name", metric_id)
             
-        Returns:
-            Dictionary with analysis results
-        """
-        import numpy as np
-        from scipy import stats as scipystats
-        
-        # Convert to numeric
-        numeric_values = []
-        for v in values:
-            try:
-                numeric_values.append(float(v))
-            except (ValueError, TypeError):
-                pass
-        
-        if not numeric_values:
-            return {"count": 0, "valid_count": 0}
-        
-        # Basic stats
-        np_array = np.array(numeric_values)
-        percentiles = np.percentile(np_array, [25, 50, 75])
-        
-        analysis = {
-            "count": len(values),
-            "valid_count": len(numeric_values),
-            "min": float(np.min(np_array)),
-            "max": float(np.max(np_array)),
-            "mean": float(np.mean(np_array)),
-            "median": float(np.median(np_array)),
-            "std_deviation": float(np.std(np_array)),
-            "variance": float(np.var(np_array)),
-            "quartiles": {
-                "q1": float(percentiles[0]),
-                "q2": float(percentiles[1]),
-                "q3": float(percentiles[2])
-            },
-            "skewness": float(scipystats.skew(np_array)),
-            "kurtosis": float(scipystats.kurtosis(np_array))
-        }
-        
-        # Create histogram data
-        hist, bin_edges = np.histogram(np_array, bins='auto')
-        histogram_data = []
-        for i in range(len(hist)):
-            histogram_data.append({
-                "bin_start": float(bin_edges[i]),
-                "bin_end": float(bin_edges[i+1]),
-                "count": int(hist[i])
-            })
-        
-        analysis["histogram"] = histogram_data
-        
-        return analysis
-    
-    def _run_categorical_analysis(self, values: List[Any]) -> Dict[str, Any]:
-        """
-        Run detailed analysis for categorical data.
-        
-        Args:
-            values: List of values
-            
-        Returns:
-            Dictionary with analysis results
-        """
-        if not values:
-            return {"count": 0}
-        
-        # Count categories
-        category_counts = {}
-        for v in values:
-            if v is None:
-                continue
+            # Extract responses for this specific metric
+            metric_responses = []
+            for response_data in responses:
+                # Get the responses object which contains question_id -> answer mapping
+                response_answers = response_data.get("responses", {})
                 
-            category = str(v)
-            if category in category_counts:
-                category_counts[category] += 1
-            else:
-                category_counts[category] = 1
-        
-        # Calculate percentages and sort
-        total = len(values)
-        categories_sorted = sorted(
-            [
-                {
-                    "category": cat,
-                    "count": count,
-                    "percentage": (count / total) * 100
-                }
-                for cat, count in category_counts.items()
-            ],
-            key=lambda x: x["count"],
-            reverse=True
-        )
-        
-        # Calculate entropy (measure of diversity)
-        import numpy as np
-        probabilities = [count / total for count in category_counts.values()]
-        entropy = -sum(p * np.log2(p) for p in probabilities if p > 0)
-        max_entropy = np.log2(len(category_counts)) if len(category_counts) > 0 else 0
-        normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
-        
-        analysis = {
-            "count": total,
-            "unique_categories": len(category_counts),
-            "categories": categories_sorted,
-            "entropy": float(entropy),
-            "normalized_entropy": float(normalized_entropy),
-            "dominance": 1.0 - float(normalized_entropy)  # How dominated by a few categories
-        }
-        
-        return analysis
-    
-    def _run_multi_choice_analysis(self, values: List[Any]) -> Dict[str, Any]:
-        """
-        Run detailed analysis for multi-choice data.
-        
-        Args:
-            values: List of values (each value should be a list)
-            
-        Returns:
-            Dictionary with analysis results
-        """
-        if not values:
-            return {"count": 0}
-        
-        # Count options and co-occurrences
-        option_counts = {}
-        valid_responses = 0
-        co_occurrences = {}
-        
-        for v in values:
-            if not isinstance(v, list) or not v:
-                continue
-                
-            valid_responses += 1
-            response_options = [str(opt) for opt in v]
-            
-            # Count individual options
-            for option in response_options:
-                if option in option_counts:
-                    option_counts[option] += 1
-                else:
-                    option_counts[option] = 1
-                    co_occurrences[option] = {}
-            
-            # Count co-occurrences
-            for i, opt1 in enumerate(response_options):
-                for opt2 in response_options[i+1:]:
-                    if opt2 in co_occurrences[opt1]:
-                        co_occurrences[opt1][opt2] += 1
-                    else:
-                        co_occurrences[opt1][opt2] = 1
+                if not response_answers:
+                    continue
                     
-                    if opt1 in co_occurrences[opt2]:
-                        co_occurrences[opt2][opt1] += 1
+                # Extract the response for this metric
+                metric_value = response_answers.get(metric_name) or response_answers.get(metric_id)
+                
+                if metric_value is not None:
+                    # Create a response object with the appropriate field based on metric type
+                    metric_type = metric.get("type", "unknown")
+                    
+                    if metric_type == "numeric":
+                        try:
+                            metric_responses.append({"value": float(metric_value)})
+                        except (ValueError, TypeError):
+                            pass
+                    elif metric_type == "categorical":
+                        metric_responses.append({"category": str(metric_value)})
+                    elif metric_type == "multi_choice":
+                        if isinstance(metric_value, list):
+                            metric_responses.append({"value": metric_value})
+                        elif isinstance(metric_value, str) and metric_value.startswith('[') and metric_value.endswith(']'):
+                            try:
+                                metric_responses.append({"value": json.loads(metric_value)})
+                            except:
+                                metric_responses.append({"value": [metric_value]})
                     else:
-                        co_occurrences[opt2][opt1] = 1
+                            metric_responses.append({"value": [metric_value]})
+                elif metric_type == "text":
+                    if isinstance(metric_value, str):
+                        metric_responses.append({"text": metric_value})
+            
+            # Create a task for analyzing this metric
+            task = asyncio.create_task(
+                self.metric_service.analyze_metric(
+                    survey_id=survey_id,
+                    metric_id=metric_id,
+                    metric_data=metric,
+                    responses=metric_responses,
+                    force_refresh=force_refresh
+                )
+            )
+            tasks.append((metric_id, task))
         
-        # Calculate percentages and sort
-        options_sorted = sorted(
-            [
-                {
-                    "option": opt,
-                    "count": count,
-                    "percentage": (count / valid_responses) * 100 if valid_responses > 0 else 0
-                }
-                for opt, count in option_counts.items()
-            ],
-            key=lambda x: x["count"],
-            reverse=True
-        )
+        # Wait for all tasks to complete
+        for metric_id, task in tasks:
+            try:
+                results[metric_id] = await task
+            except Exception as e:
+                logger.error(f"Error analyzing metric {metric_id}: {str(e)}")
+                results[metric_id] = {"error": str(e)}
         
-        # Format co-occurrences
-        co_occurrence_list = []
-        for opt1, occurrences in co_occurrences.items():
-            for opt2, count in occurrences.items():
-                if opt1 < opt2:  # Avoid duplicates
-                    co_occurrence_list.append({
-                        "option1": opt1,
-                        "option2": opt2,
-                        "count": count,
-                        "percentage": (count / valid_responses) * 100 if valid_responses > 0 else 0
-                    })
-        
-        # Sort by count
-        co_occurrence_list.sort(key=lambda x: x["count"], reverse=True)
-        
-        # Calculate average selections per response
-        total_selections = sum(option_counts.values())
-        avg_selections = total_selections / valid_responses if valid_responses > 0 else 0
-        
-        analysis = {
-            "count": len(values),
-            "valid_responses": valid_responses,
-            "unique_options": len(option_counts),
-            "options": options_sorted,
-            "co_occurrences": co_occurrence_list[:20],  # Limit to top 20
-            "average_selections": float(avg_selections)
-        }
-        
-        return analysis
+        logger.info(f"Completed individual metric analysis for survey {survey_id}")
+        return results
     
-    async def _run_cross_metric_analysis(
+    async def _analyze_metric_relationships(
         self, 
         survey_id: int, 
-        metrics_data: Dict[str, Any], 
-        responses: List[Dict[str, Any]]
+        metrics: Union[List[Dict[str, Any]], Dict[str, Any]], 
+        responses: List[Dict[str, Any]],
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         """
-        Run cross-metric correlation analysis.
+        Analyze relationships between metrics.
         
         Args:
             survey_id: The survey ID
-            metrics_data: Dictionary mapping metric IDs to metric definitions
+            metrics: Dictionary of metric definitions or list of metric definitions
             responses: List of survey responses
+            force_refresh: Whether to skip the cache and force a fresh analysis
             
         Returns:
-            Dictionary with cross-metric analysis results
+            Cross-metric analysis results
         """
-        logger.info(f"Running cross-metric analysis for survey {survey_id}")
+        logger.info(f"Analyzing relationships between metrics for survey {survey_id}")
         
-        # Check cache first
-        cached_result = metadata_store.get_analysis_result("cross_metric_analysis", survey_id)
-        if cached_result:
-            return cached_result
-        
-        # Run correlation analysis
-        correlation_result = await correlation_analysis_service.analyze_cross_metric_correlations(
-            survey_id, 
-            metrics_data, 
-            responses
-        )
-        
-        # Generate AI insights
-        ai_result = await ai_insights_service.generate_cross_metric_insights(
-            survey_id,
-            correlation_result,
-            metrics_data
-        )
-        
-        # Combine results
-        result = {
-            "survey_id": survey_id,
-            "timestamp": datetime.now().isoformat(),
-            "correlation_analysis": correlation_result,
-            "ai_insights": ai_result
-        }
-        
-        # Store in cache
-        metadata_store.store_analysis_result("cross_metric_analysis", survey_id, result)
-        
-        logger.info(f"Completed cross-metric analysis for survey {survey_id}")
-        return result
-    
-    async def _generate_survey_summary(
-        self, 
-        survey_id: int, 
-        survey_data: Dict[str, Any], 
-        analysis_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Generate a comprehensive survey summary.
-        
-        Args:
-            survey_id: The survey ID
-            survey_data: Survey metadata and configuration
-            analysis_results: Results from all analysis steps
-            
-        Returns:
-            Dictionary with survey summary
-        """
-        logger.info(f"Generating survey summary for survey {survey_id}")
-        
-        # Check cache first
-        cached_result = metadata_store.get_analysis_result("survey_summary", survey_id)
-        if cached_result:
-            return cached_result
-        
-        # Generate summary using AI
-        summary_result = await ai_insights_service.generate_survey_summary(
-            survey_id,
-            survey_data,
-            analysis_results
-        )
-        
-        # Store in cache
-        metadata_store.store_analysis_result("survey_summary", survey_id, summary_result)
-        
-        logger.info(f"Completed survey summary for survey {survey_id}")
-        return summary_result
-    
-    def _save_progress(self, result: Dict[str, Any]) -> None:
-        """
-        Save intermediate analysis progress.
-        
-        Args:
-            result: Current analysis results
-        """
-        survey_id = result.get("survey_id")
-        if survey_id:
-            metadata_store.store_analysis_result("analysis_progress", survey_id, result)
-
-    async def _run_vector_enhanced_analysis(
-        self, 
-        survey_id: int, 
-        metric_id: str, 
-        responses: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """
-        Run vector-enhanced analysis for a metric.
-        
-        Args:
-            survey_id: Survey ID
-            metric_id: Metric ID
-            responses: Survey responses
-            
-        Returns:
-            Dictionary with vector-enhanced analysis results
-        """
-        logger.info(f"Running vector-enhanced analysis for metric {metric_id} in survey {survey_id}")
-        
-        # Check cache first
-        cache_key = f"vector_analysis_{metric_id}"
-        cached_result = metadata_store.get_analysis_result(cache_key, survey_id)
-        if cached_result:
-            return cached_result
+        # Convert metrics dict to list if needed for cross-metric service
+        if isinstance(metrics, dict):
+            metrics_list = list(metrics.values())
+        else:
+            metrics_list = metrics
         
         try:
-            # Initialize result
-            result = {
-                "survey_id": survey_id,
-                "metric_id": metric_id,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # Run cluster analysis
-            clusters = await vector_trend_analysis_service.detect_response_clusters(
+            # Run cross-metric analysis
+            cross_metric_results = await self.cross_metric_service.analyze_metric_correlations(
                 survey_id=survey_id,
-                question_id=metric_id
+                metrics_data=metrics_list,
+                responses=responses,
+                force_refresh=force_refresh
             )
-            result["response_clusters"] = clusters
             
-            # Run temporal trend analysis
-            trends = await vector_trend_analysis_service.detect_temporal_trends(
-                survey_id=survey_id,
-                question_id=metric_id
-            )
-            result["temporal_trends"] = trends
-            
-            # Run anomaly detection
-            anomalies = await vector_trend_analysis_service.detect_anomalies(
-                survey_id=survey_id,
-                question_id=metric_id
-            )
-            result["anomaly_detection"] = anomalies
-            
-            # Store in cache
-            metadata_store.store_analysis_result(cache_key, survey_id, result)
-            
-            logger.info(f"Completed vector-enhanced analysis for metric {metric_id} in survey {survey_id}")
-            return result
+            return cross_metric_results
         except Exception as e:
-            logger.error(f"Error in vector-enhanced analysis for metric {metric_id}: {str(e)}")
+            logger.error(f"Error in cross-metric analysis for survey {survey_id}: {str(e)}")
+            return {"error": str(e)}
+    
+    async def _generate_executive_summary(
+        self, 
+        metric_results: Dict[str, Any], 
+        cross_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Generate an executive summary from all analysis results.
+        
+        Args:
+            metric_results: Results from individual metric analysis
+            cross_results: Results from cross-metric analysis
+            
+        Returns:
+            Executive summary
+        """
+        # Extract key insights from metric analysis
+        metric_insights = []
+        for metric_id, result in metric_results.items():
+            if "ai_insights" in result and "summary" in result["ai_insights"]:
+                insight = {
+                    "metric_id": metric_id,
+                    "metric_name": result.get("metric_name", metric_id),
+                    "insight": result["ai_insights"]["summary"]
+                }
+                metric_insights.append(insight)
+        
+        # Extract key insights from cross-metric analysis
+        cross_metric_insights = []
+        if "ai_insights" in cross_results and "summary" in cross_results["ai_insights"]:
+            cross_metric_insights = [{"insight": cross_results["ai_insights"]["summary"]}]
+        
+        # Compile the executive summary
+        summary = {
+            "timestamp": datetime.now().isoformat(),
+            "metric_insights": metric_insights[:5],  # Include top 5 metric insights
+            "relationship_insights": cross_metric_insights,
+            "total_metrics_analyzed": len(metric_results),
+            "notable_correlations": []
+        }
+        
+        # Add notable correlations if available
+        if "numeric_correlations" in cross_results and "correlations" in cross_results["numeric_correlations"]:
+            correlations = cross_results["numeric_correlations"]["correlations"]
+            notable = [c for c in correlations if c.get("significant", False) and abs(c.get("correlation", 0)) > 0.5]
+            
+            for correlation in notable[:3]:  # Include top 3 notable correlations
+                summary["notable_correlations"].append({
+                    "metric1": correlation.get("metric1", ""),
+                    "metric2": correlation.get("metric2", ""),
+                    "correlation": correlation.get("correlation", 0),
+                    "strength": correlation.get("strength", "")
+                })
+        
+        return summary
+    
+    async def run_analysis_pipeline(
+        self, 
+        survey_id: int, 
+        survey_data: Dict[str, Any],
+        responses: List[Dict[str, Any]],
+        use_celery: bool = False,
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Run the complete analysis pipeline.
+        
+        Args:
+            survey_id: The survey ID
+            survey_data: The survey definition data
+            responses: List of survey responses
+            use_celery: Whether to use Celery for async tasks
+            force_refresh: Whether to skip the cache and force a fresh analysis
+            
+        Returns:
+            Analysis results or Celery task info
+        """
+        logger.info(f"Running analysis pipeline for survey {survey_id} with use_celery={use_celery}, force_refresh={force_refresh}")
+        
+        if use_celery:
+            # Import the Celery app and task directly
+            from data_pipeline.tasks.celery_app import app
+            
+            # Convert data to JSON-serializable format
+            serializable_survey_data = json.dumps(survey_data, default=lambda x: str(x) if hasattr(x, "__str__") else None)
+            serializable_responses = json.dumps(responses, default=lambda x: str(x) if hasattr(x, "__str__") else None)
+            
+            # Submit task to Celery using the full task name
+            logger.info(f"Submitting analysis task to Celery for survey {survey_id}")
+            task = app.send_task(
+                "data_pipeline.tasks.analysis_tasks.run_comprehensive_analysis",
+                kwargs={
+                    "survey_id": survey_id,
+                    "survey_data": serializable_survey_data,
+                    "responses": serializable_responses,
+                    "force_refresh": force_refresh
+                }
+            )
+            
+            # Return task information
             return {
+                "status": "submitted",
+                "task_id": task.id,
                 "survey_id": survey_id,
-                "metric_id": metric_id,
                 "timestamp": datetime.now().isoformat(),
-                "status": "error",
-                "error": str(e)
+                "message": "Analysis job submitted to Celery"
             }
+        else:
+            # Run analysis directly
+            logger.info(f"Running analysis directly (not using Celery) for survey {survey_id}")
+            return await self.analyze_survey(survey_id, survey_data, responses, force_refresh=force_refresh)
+
+
+# Convert MongoDB ObjectId to strings for JSON serialization
+def convert_objectid_to_str(data):
+    """Convert ObjectId fields to strings in data structures recursively."""
+    if isinstance(data, dict):
+        return {k: convert_objectid_to_str(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [convert_objectid_to_str(item) for item in data]
+    elif str(type(data)).endswith("ObjectId'>"):
+        return str(data)
+    else:
+        return data
+
 
 # Singleton instance
 analysis_coordinator = AnalysisCoordinator() 

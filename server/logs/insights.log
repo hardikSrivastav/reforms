@@ -1,0 +1,38 @@
+2025-05-04 09:58:12,344 - insights - INFO - get_full_insights called for survey_id=4, force_refresh=False
+2025-05-04 09:58:12,352 - insights - INFO - Checking for cached analysis for survey_id=4
+2025-05-04 09:58:12,366 - insights - INFO - Fetching survey data for survey_id=4, mongo_id=681385da65fc6fe4a5fee80b
+2025-05-04 09:58:12,380 - insights - INFO - Found 7 metrics in survey data
+2025-05-04 09:58:12,381 - insights - INFO - Extracted 0 metrics with valid IDs
+2025-05-04 09:58:12,382 - insights - INFO - Fetching responses for survey_id=4, mongo_id=681385da65fc6fe4a5fee80b
+2025-05-04 09:58:12,393 - insights - INFO - Found 10 responses for survey_id=4
+2025-05-04 09:58:12,395 - insights - INFO - Converting ObjectId fields to strings for serialization
+2025-05-04 09:58:12,398 - insights - INFO - Checking if analysis is already in progress for survey_id=4
+2025-05-04 09:58:12,403 - insights - INFO - Adding background analysis task for survey_id=4
+2025-05-04 09:58:12,407 - insights - INFO - Running base analysis for survey_id=4
+2025-05-04 09:58:12,414 - insights - INFO - Resolving coroutines in base insights
+2025-05-04 09:58:12,415 - insights - INFO - Returning base insights while comprehensive analysis runs in background
+2025-05-04 09:58:12,424 - insights - INFO - [TASK:4-1746352692.424703] Starting background analysis for survey_id=4
+2025-05-04 09:58:12,429 - insights - INFO - [TASK:4-1746352692.424703] Analysis input: metrics_count=0, responses_count=10
+2025-05-04 09:58:12,433 - insights - INFO - [TASK:4-1746352692.424703] Running analysis_coordinator.run_analysis_pipeline
+2025-05-04 09:58:12,481 - insights - INFO - [TASK:4-1746352692.424703] Analysis completed in 0.05 seconds
+2025-05-04 09:58:12,493 - insights - INFO - [TASK:4-1746352692.424703] Result keys: ['survey_id', 'timestamp', 'status', 'task_id', 'use_celery']
+2025-05-04 09:58:12,499 - insights - INFO - [TASK:4-1746352692.424703] Result status: queued
+2025-05-04 09:58:12,514 - insights - INFO - [TASK:4-1746352692.424703] Celery task ID: 3c51df7f-f444-4dbc-a07f-4ce7ca55f84d
+2025-05-04 10:00:40,100 - insights - INFO - get_full_insights called for survey_id=4, force_refresh=True
+2025-05-04 10:00:40,109 - insights - INFO - Fetching survey data for survey_id=4, mongo_id=681385da65fc6fe4a5fee80b
+2025-05-04 10:00:40,116 - insights - INFO - Found 7 metrics in survey data
+2025-05-04 10:00:40,117 - insights - INFO - Extracted 0 metrics with valid IDs
+2025-05-04 10:00:40,119 - insights - INFO - Fetching responses for survey_id=4, mongo_id=681385da65fc6fe4a5fee80b
+2025-05-04 10:00:40,124 - insights - INFO - Found 10 responses for survey_id=4
+2025-05-04 10:00:40,125 - insights - INFO - Converting ObjectId fields to strings for serialization
+2025-05-04 10:00:40,129 - insights - INFO - Adding background analysis task for survey_id=4
+2025-05-04 10:00:40,130 - insights - INFO - Running base analysis for survey_id=4
+2025-05-04 10:00:40,134 - insights - INFO - Resolving coroutines in base insights
+2025-05-04 10:00:40,136 - insights - INFO - Returning base insights while comprehensive analysis runs in background
+2025-05-04 10:00:40,142 - insights - INFO - [TASK:4-1746352840.142161] Starting background analysis for survey_id=4
+2025-05-04 10:00:40,145 - insights - INFO - [TASK:4-1746352840.142161] Analysis input: metrics_count=0, responses_count=10
+2025-05-04 10:00:40,146 - insights - INFO - [TASK:4-1746352840.142161] Running analysis_coordinator.run_analysis_pipeline
+2025-05-04 10:00:40,164 - insights - INFO - [TASK:4-1746352840.142161] Analysis completed in 0.02 seconds
+2025-05-04 10:00:40,166 - insights - INFO - [TASK:4-1746352840.142161] Result keys: ['survey_id', 'timestamp', 'status', 'task_id', 'use_celery']
+2025-05-04 10:00:40,168 - insights - INFO - [TASK:4-1746352840.142161] Result status: queued
+2025-05-04 10:00:40,170 - insights - INFO - [TASK:4-1746352840.142161] Celery task ID: 447c6bfc-f2fb-4d2d-8896-e958d90a7b8c

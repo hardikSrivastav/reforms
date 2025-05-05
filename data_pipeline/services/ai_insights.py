@@ -54,7 +54,7 @@ class AIInsightsService:
             Dictionary with AI-generated insights
         """
         # Check cache first
-        cached_result = metadata_store.get_analysis_result("ai_insights", survey_id, metric_id)
+        cached_result = await metadata_store.get_analysis_result("ai_insights", survey_id, metric_id)
         if cached_result:
             return cached_result
         
@@ -85,7 +85,7 @@ class AIInsightsService:
         }
         
         # Store in cache
-        metadata_store.store_analysis_result("ai_insights", survey_id, result, metric_id)
+        await metadata_store.store_analysis_result("ai_insights", survey_id, result, metric_id)
         
         return result
     
@@ -107,7 +107,7 @@ class AIInsightsService:
             Dictionary with AI-generated insights
         """
         # Check cache first
-        cached_result = metadata_store.get_analysis_result("cross_metric_insights", survey_id)
+        cached_result = await metadata_store.get_analysis_result("cross_metric_insights", survey_id)
         if cached_result:
             return cached_result
         
@@ -129,7 +129,7 @@ class AIInsightsService:
         }
         
         # Store in cache
-        metadata_store.store_analysis_result("cross_metric_insights", survey_id, result)
+        await metadata_store.store_analysis_result("cross_metric_insights", survey_id, result)
         
         return result
     
@@ -151,18 +151,47 @@ class AIInsightsService:
             Dictionary with AI-generated summary
         """
         # Check cache first
-        cached_result = metadata_store.get_analysis_result("survey_summary", survey_id)
+        cached_result = await metadata_store.get_analysis_result("survey_summary", survey_id)
         if cached_result:
+            logger.info(f"Using cached survey summary for survey {survey_id}")
             return cached_result
+        
+        # Add detailed logging for debugging
+        logger.info(f"Generating survey summary for survey {survey_id}")
+        
+        # Log survey_data contents
+        survey_keys = list(survey_data.keys())
+        logger.info(f"Survey data keys: {survey_keys}")
+        logger.info(f"Survey info: name={survey_data.get('name', 'Unknown')}, metrics_count={len(survey_data.get('metrics', {}))}")
+        
+        # Log analysis_results structure
+        result_keys = list(all_analysis_results.keys())
+        logger.info(f"Analysis results keys: {result_keys}")
         
         # Prepare context for the prompt
         context = self._prepare_survey_summary_context(survey_data, all_analysis_results)
         
+        # Log the context content to identify missing data
+        context_data = json.loads(context['survey_context']) if 'survey_context' in context else {}
+        context_summary = {
+            'survey_info': context_data.get('survey_info', {}),
+            'metrics_count': len(context_data.get('metrics_info', {})),
+            'correlations_count': len(context_data.get('significant_correlations', []))
+        }
+        logger.info(f"Context for AI summary: {json.dumps(context_summary)}")
+        
         # Generate insights using AI
         summary = await self._generate_completion(self._get_survey_summary_prompt(), context)
         
+        # Log summary preview
+        preview = summary[:100] + "..." if len(summary) > 100 else summary
+        logger.info(f"Generated summary preview: {preview}")
+        
         # Parse and structure the summary
         structured_summary = self._parse_survey_summary(summary)
+        
+        # Log structured summary
+        logger.info(f"Structured summary: exec_summary_length={len(structured_summary.get('executive_summary', ''))}, key_metrics_count={len(structured_summary.get('key_metrics', []))}")
         
         # Create result
         result = {
@@ -174,7 +203,7 @@ class AIInsightsService:
         }
         
         # Store in cache
-        metadata_store.store_analysis_result("survey_summary", survey_id, result)
+        await metadata_store.store_analysis_result("survey_summary", survey_id, result)
         
         return result
     
@@ -424,6 +453,9 @@ class AIInsightsService:
         Returns:
             Dictionary with context data
         """
+        # Add logging to trace data processing
+        logger.info("Preparing survey summary context")
+        
         # Extract survey metadata
         survey_info = {
             "name": survey_data.get("name", "Unknown Survey"),
@@ -433,23 +465,77 @@ class AIInsightsService:
             "end_date": survey_data.get("end_date", "")
         }
         
+        logger.info(f"Survey metadata: {json.dumps(survey_info)}")
+        
+        # Log what's available in all_analysis_results
+        for key, value in all_analysis_results.items():
+            if isinstance(value, dict):
+                logger.info(f"Analysis result section '{key}' has {len(value)} items")
+            else:
+                logger.info(f"Analysis result section '{key}' is not a dictionary")
+        
         # Extract metrics info
         metrics_info = {}
-        for metric_id, metric_data in survey_data.get("metrics", {}).items():
+        metrics_data_source = survey_data.get("metrics", {})
+        logger.info(f"Found {len(metrics_data_source)} metrics in survey_data")
+        
+        for metric_id, metric_data in metrics_data_source.items():
+            # Log the raw metric data for debugging
+            logger.debug(f"Processing metric {metric_id}: name={metric_data.get('name', 'Unknown')}, type={metric_data.get('type', 'unknown')}")
+            
             # Get metric insights if available
-            metric_insights = all_analysis_results.get("metric_insights", {}).get(metric_id, {})
+            metric_insights = {}
+            if "metric_analysis" in all_analysis_results:
+                metric_insights = all_analysis_results.get("metric_analysis", {}).get(metric_id, {})
+                logger.debug(f"Found metric analysis for {metric_id}: {list(metric_insights.keys())}")
+            elif "metric_insights" in all_analysis_results:
+                metric_insights = all_analysis_results.get("metric_insights", {}).get(metric_id, {})
+                logger.debug(f"Found metric insights for {metric_id}: {list(metric_insights.keys())}")
+            else:
+                logger.warning(f"No analysis found for metric {metric_id} in all_analysis_results")
+            
             structured_insights = metric_insights.get("structured_insights", {})
             
+            # Extract relevant data for context
             metrics_info[metric_id] = {
                 "name": metric_data.get("name", "Unknown"),
                 "type": metric_data.get("type", "unknown"),
                 "key_findings": structured_insights.get("key_findings", []),
                 "recommendations": structured_insights.get("recommendations", [])
             }
+            
+            # Log what was extracted for this metric
+            findings_count = len(structured_insights.get("key_findings", []))
+            recommendations_count = len(structured_insights.get("recommendations", []))
+            logger.debug(f"Extracted for metric {metric_id}: findings={findings_count}, recommendations={recommendations_count}")
         
         # Extract cross-metric insights
-        cross_metric_insights = all_analysis_results.get("cross_metric_insights", {})
-        significant_correlations = cross_metric_insights.get("structured_insights", {}).get("strongest_relationships", [])
+        cross_metric_insights = {}
+        
+        if "cross_metric_analysis" in all_analysis_results:
+            cross_metric_insights = all_analysis_results.get("cross_metric_analysis", {})
+            logger.info(f"Found cross-metric analysis with keys: {list(cross_metric_insights.keys())}")
+        elif "cross_metric_insights" in all_analysis_results:
+            cross_metric_insights = all_analysis_results.get("cross_metric_insights", {})
+            logger.info(f"Found cross-metric insights with keys: {list(cross_metric_insights.keys())}")
+        
+        # Try multiple paths to find significant correlations
+        significant_correlations = []
+        
+        # Path 1: Directly in structured_insights
+        if "structured_insights" in cross_metric_insights:
+            significant_correlations = cross_metric_insights.get("structured_insights", {}).get("strongest_relationships", [])
+            logger.info(f"Found {len(significant_correlations)} correlations in structured_insights.strongest_relationships")
+        
+        # Path 2: In key_insights
+        elif "key_insights" in cross_metric_insights:
+            significant_correlations = cross_metric_insights.get("key_insights", {}).get("strongest_correlations", [])
+            logger.info(f"Found {len(significant_correlations)} correlations in key_insights.strongest_correlations")
+        
+        # Path 3: Direct significant_correlations field
+        elif "significant_correlations" in cross_metric_insights:
+            significant_correlations = cross_metric_insights.get("significant_correlations", [])
+            logger.info(f"Found {len(significant_correlations)} correlations in significant_correlations")
         
         # Combine into context
         context = {
@@ -457,6 +543,9 @@ class AIInsightsService:
             "metrics_info": metrics_info,
             "significant_correlations": significant_correlations
         }
+        
+        # Log the final context for debugging
+        logger.info(f"Final context summary: survey={bool(survey_info)}, metrics={len(metrics_info)}, correlations={len(significant_correlations)}")
         
         # Format as string
         context_str = json.dumps(context, indent=2)

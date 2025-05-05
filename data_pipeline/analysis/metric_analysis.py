@@ -19,9 +19,13 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import nltk
+import logging
 
 from data_pipeline.services.metadata_store import metadata_store
 from data_pipeline.config import settings
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 # Ensure NLTK resources are downloaded
 try:
@@ -54,7 +58,8 @@ class MetricAnalysisService:
         survey_id: int, 
         metric_id: str, 
         metric_data: Dict[str, Any], 
-        responses: List[Dict[str, Any]]
+        responses: List[Dict[str, Any]],
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         """
         Analyze a specific metric in detail.
@@ -63,15 +68,24 @@ class MetricAnalysisService:
             survey_id: The survey ID
             metric_id: The metric ID to analyze
             metric_data: The metric definition data
-            responses: List of responses for this metric
+            responses: List of responses for this metric. Each response should have either
+                       'value', 'category', or 'text' based on the metric type.
+            force_refresh: Whether to skip the cache and force a fresh analysis
             
         Returns:
             Dictionary with detailed analysis results
         """
-        # Check cache first
-        cached_result = await metadata_store.get_analysis_result("metric_analysis", survey_id, metric_id)
-        if cached_result:
-            return cached_result
+        logger.info(f"Analyzing metric {metric_id} for survey {survey_id}")
+        logger.info(f"Metric type: {metric_data.get('type', 'unknown')}, Total responses: {len(responses)}")
+        
+        # Check cache first if not forcing refresh
+        if not force_refresh:
+            cached_result = await metadata_store.get_analysis_result("metric_analysis", survey_id, metric_id)
+            if cached_result:
+                logger.info(f"Using cached analysis for metric {metric_id}")
+                return cached_result
+        else:
+            logger.info(f"Force refresh requested, skipping cache for metric {metric_id}")
         
         # Determine the type of metric and perform appropriate analysis
         metric_type = metric_data.get("type", "numeric")
@@ -86,6 +100,9 @@ class MetricAnalysisService:
         elif metric_type == "text":
             statistical_analysis = await self._analyze_text_metric(metric_data, responses)
             visualizations = await self._generate_text_visualizations(metric_data, responses)
+        elif metric_type == "multi_choice":
+            statistical_analysis = await self._analyze_multi_choice_metric(metric_data, responses)
+            visualizations = await self._generate_categorical_visualizations(metric_data, responses)
         else:
             # Default to empty analysis for unsupported types
             statistical_analysis = {"type": metric_type, "error": "Unsupported metric type"}
@@ -108,8 +125,9 @@ class MetricAnalysisService:
         }
         
         # Store in cache
-        await metadata_store.store_analysis_result("metric_analysis", survey_id, metric_id, result)
+        await metadata_store.store_analysis_result("metric_analysis", survey_id, result, metric_id)
         
+        logger.info(f"Completed analysis for metric {metric_id}")
         return result
 
     async def _analyze_numeric_metric(
@@ -120,7 +138,7 @@ class MetricAnalysisService:
         
         Args:
             metric_data: The metric definition
-            responses: List of responses with numeric values
+            responses: List of responses with numeric values in the 'value' field
             
         Returns:
             Dictionary with statistical analysis
@@ -199,7 +217,7 @@ class MetricAnalysisService:
         
         Args:
             metric_data: The metric definition
-            responses: List of responses with categorical values
+            responses: List of responses with categorical values in the 'category' field
             
         Returns:
             Dictionary with statistical analysis
@@ -266,6 +284,98 @@ class MetricAnalysisService:
         
         return stats_result
 
+    async def _analyze_multi_choice_metric(
+        self, metric_data: Dict[str, Any], responses: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Perform statistical analysis on multi-choice metric data.
+        
+        Args:
+            metric_data: The metric definition
+            responses: List of responses with multi-choice values in the 'value' field as lists
+            
+        Returns:
+            Dictionary with statistical analysis
+        """
+        # Extract multi-choice values
+        values = []
+        for response in responses:
+            value = response.get("value")
+            if isinstance(value, list):
+                values.append(value)
+            # Handle string representation of list
+            elif isinstance(value, str) and value.startswith('[') and value.endswith(']'):
+                try:
+                    list_value = json.loads(value)
+                    if isinstance(list_value, list):
+                        values.append(list_value)
+                except:
+                    pass
+        
+        if not values:
+            return {"type": "multi_choice", "error": "No valid multi-choice values"}
+        
+        # Count occurrences of each option
+        option_counts = {}
+        for value_list in values:
+            for option in value_list:
+                option_str = str(option)
+                if option_str in option_counts:
+                    option_counts[option_str] += 1
+                else:
+                    option_counts[option_str] = 1
+        
+        # Calculate frequencies and percentages
+        total_responses = len(values)
+        distribution = {}
+        
+        for option, count in option_counts.items():
+            distribution[option] = {
+                "count": count,
+                "percentage": (count / total_responses) * 100
+            }
+        
+        # Find most and least common options
+        most_common = sorted(option_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+        most_common = [{"option": option, "count": count} for option, count in most_common]
+        
+        # Calculate average selections per response
+        avg_selections = sum(len(value_list) for value_list in values) / total_responses if total_responses > 0 else 0
+        
+        # Analyze co-occurrences between options
+        co_occurrences = {}
+        for value_list in values:
+            if len(value_list) > 1:
+                for i, option1 in enumerate(value_list):
+                    for option2 in value_list[i+1:]:
+                        pair = (str(option1), str(option2))
+                        if pair in co_occurrences:
+                            co_occurrences[pair] += 1
+                        else:
+                            co_occurrences[pair] = 1
+        
+        # Format co-occurrences for output
+        co_occurrence_data = []
+        for (option1, option2), count in sorted(co_occurrences.items(), key=lambda x: x[1], reverse=True)[:10]:
+            co_occurrence_data.append({
+                "option1": option1,
+                "option2": option2,
+                "count": count,
+                "percentage": (count / total_responses) * 100
+            })
+        
+        stats_result = {
+            "type": "multi_choice",
+            "total_responses": total_responses,
+            "unique_options": len(option_counts),
+            "distribution": distribution,
+            "most_common": most_common,
+            "average_selections": float(avg_selections),
+            "co_occurrences": co_occurrence_data
+        }
+        
+        return stats_result
+
     async def _analyze_text_metric(
         self, metric_data: Dict[str, Any], responses: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
@@ -274,7 +384,7 @@ class MetricAnalysisService:
         
         Args:
             metric_data: The metric definition
-            responses: List of responses with text values
+            responses: List of responses with text values in the 'text' field
             
         Returns:
             Dictionary with statistical analysis
@@ -364,7 +474,8 @@ class MetricAnalysisService:
             ]
         except Exception as e:
             # Handle case where NLTK resources are not available
-            stats_result["common_words"] = str(e)
+            logger.warning(f"Error extracting common words: {str(e)}")
+            stats_result["common_words"] = []
         
         return stats_result
 
@@ -416,17 +527,65 @@ class MetricAnalysisService:
             
             insight_text = response.choices[0].message.content
             
+            # Parse insights into structured format
+            structured_insights = self._parse_insights(insight_text)
+            
             return {
                 "summary": insight_text,
+                "structured_insights": structured_insights,
                 "generated_at": datetime.now().isoformat()
             }
         except Exception as e:
             # Return error if AI insights generation fails
+            logger.error(f"Error generating AI insights: {str(e)}")
             return {
                 "error": str(e),
                 "summary": f"Could not generate AI insights for {metric_name}",
                 "generated_at": datetime.now().isoformat()
             }
+    
+    def _parse_insights(self, insight_text: str) -> Dict[str, Any]:
+        """Parse AI-generated insights into a structured format."""
+        result = {
+            "key_findings": [],
+            "patterns": [],
+            "recommendations": []
+        }
+        
+        current_section = None
+        
+        for line in insight_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Detect section headers
+            if "key findings" in line.lower() or "summary" in line.lower():
+                current_section = "key_findings"
+                continue
+            elif "patterns" in line.lower() or "trends" in line.lower() or "notable" in line.lower():
+                current_section = "patterns"
+                continue
+            elif "recommendation" in line.lower() or "action" in line.lower():
+                current_section = "recommendations"
+                continue
+                
+            # Add content to the appropriate section
+            if current_section:
+                # Check if line starts with a bullet point or number
+                if line.startswith(("- ", "• ", "* ", "1.", "2.", "3.")):
+                    # Remove the bullet point or number
+                    clean_line = re.sub(r"^[\-\•\*\d\.]+\s*", "", line)
+                    result[current_section].append(clean_line)
+                else:
+                    # If the section is empty, add the line
+                    # Otherwise append to the last item
+                    if not result[current_section]:
+                        result[current_section].append(line)
+                    else:
+                        result[current_section][-1] += " " + line
+        
+        return result
 
     async def _generate_numeric_visualizations(
         self, 
@@ -494,8 +653,13 @@ class MetricAnalysisService:
         # Extract categorical values
         categories = []
         for response in responses:
-            category = response.get("category")
-            if isinstance(category, str):
+            # Check both 'category' and 'value' fields to handle both categorical and multi-choice
+            category = response.get("category", response.get("value"))
+            
+            # For multi-choice, each response might be a list
+            if isinstance(category, list):
+                categories.extend(category)
+            elif isinstance(category, str):
                 categories.append(category)
         
         if not categories:
@@ -598,8 +762,9 @@ class MetricAnalysisService:
             
             # Convert to format suitable for word cloud
             word_cloud_data = {word: count for word, count in word_freq.most_common(50)}
-        except Exception:
+        except Exception as e:
             # If NLTK resources are not available
+            logger.warning(f"Error creating word cloud data: {str(e)}")
             word_cloud_data = {}
         
         # Prepare visualization data

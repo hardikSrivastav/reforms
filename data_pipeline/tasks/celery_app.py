@@ -66,11 +66,14 @@ app.conf.update(
 # Example configuration for task routing based on task name
 app.conf.task_routes = {
     'data_pipeline.tasks.analysis_tasks.run_base_analysis': {'queue': 'high'},
+    'data_pipeline.tasks.analysis_tasks.run_comprehensive_analysis': {'queue': 'high'},
     'data_pipeline.tasks.analysis_tasks.run_metric_analysis': {'queue': 'default'},
     'data_pipeline.tasks.analysis_tasks.run_cross_metric_analysis': {'queue': 'low'},
     'data_pipeline.tasks.embedding_tasks.*': {'queue': 'low'},
 }
 
+# Ensure task modules are imported when workers start
+import data_pipeline.tasks.analysis_tasks
 
 if __name__ == '__main__':
     app.start() 

@@ -1,0 +1,22 @@
+{
+  "survey_id": 4,
+  "metric_id": "68138b448edffe9d37ca1ce1",
+  "metric_name": "Interest Level",
+  "metric_type": "likert",
+  "response_count": 0,
+  "timestamp": "2025-05-05T05:43:31.387761",
+  "statistical_analysis": {
+    "type": "likert",
+    "error": "Unsupported metric type"
+  },
+  "visualizations": {},
+  "ai_insights": {
+    "summary": "As per the data provided, there isn't substantial information to summarize key findings, note patterns or trends, or offer actionable recommendations. The analysis shows an error \"Unsupported metric type\". It suggests that the \"likert\" type is unsupported, potentially pointing to an issue in the data input or the method of analysis. To rectify, you may want to check the data input and ensure it aligns with the accepted input types of your analysis software or method.",
+    "structured_insights": {
+      "key_findings": [],
+      "patterns": [],
+      "recommendations": []
+    },
+    "generated_at": "2025-05-05T05:43:31.387747"
+  }
+}
